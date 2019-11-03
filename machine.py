@@ -3,6 +3,7 @@ import os
 import platform
 import time
 import datetime
+import textwrap
 
 class OSTools():
     def __init__(self):
@@ -44,17 +45,18 @@ class csvFile():
     def __init__(self):
         self.csvName = 'Details.csv'
         self.storeName = 'dat.gus'
+        self.bomFixMachines = 'bugged_devices.txt'
 
 class main():
     def __init__(self):
         self.cTools = OSTools()
         self.activeMachine = machine()
         self.firstBoot = True
-        self.csv = csvFile()
+        self.csv = csvFile() 
         self.previousAsset = 'Not Set'
 
     def Header(self):
-        message = '---------------Machine Details Tool---------------'
+        message = '---------------Machine Details Tool - UCLAN---------------'
         if(self.firstBoot == True):
             for x in range(len(message)):
                 print(message[x],end='',flush=True)
@@ -113,23 +115,65 @@ class main():
     def getUUID(self):
         uuidGet = os.popen('wmic csproduct get "UUID"').read()
         uuidList = uuidGet.split()
+
+        # Madcap logic for troublesome legacy HP devices...
         if(self.activeMachine.problemDevice == True):
-            pass
+
+            uuidStrip = uuidList[1].replace("-", '')
+            uuid_breakout = textwrap.wrap(uuidStrip, 2)
+            section_c = uuid_breakout[len(uuid_breakout)//2:]
+            section_a = uuid_breakout[:len(uuid_breakout)//4]
+            section_a = list(reversed(section_a))
+            section_b = uuid_breakout[len(uuid_breakout)//4:len(uuid_breakout)//2]
+
+            for x in range(len(section_b)):
+                mem_store = ''
+                if(x%2 == 0):
+                    mem_store = section_b[x]
+                    section_b[x] = section_b[x+1]
+                    section_b[x+1] = mem_store
+                else:
+                    pass
+
+            self.activeMachine.UUIDno = ''
+            for x in range(len(section_a)):
+                self.activeMachine.UUIDno += section_a[x]
+            
+            for x in range(len(section_b)):
+                self.activeMachine.UUIDno += section_b[x]
+
+            for x in range(len(section_c)):
+                self.activeMachine.UUIDno += section_c[x]
+
         else:
-            self.activeMachine.UUIDno = uuidList[1]
+            uuidStrip = uuidList[1].replace("-", '')
+            self.activeMachine.UUIDno = uuidStrip
+
+    def import_problem_devices(self):
+        bom_bug_file_present = os.path.isfile(self.csv.bomFixMachines)
+        if(bom_bug_file_present == False):
+            writer = open(self.csv.bomFixMachines,'w')
+            writer.close()
+        
+        with open(self.csv.bomFixMachines) as f:
+            self.problem_devices = f.readlines()
+
 
     def identify_problem_device(self):
-        problem_devices = ['HP ProBook 6360b','test','Surface Book']
-        if(self.activeMachine.model in problem_devices):
+        if(str(self.activeMachine.model) in self.problem_devices):
             self.activeMachine.problemDevice = True
 
     def getModel(self):
         machineList = os.popen('wmic csproduct get name').read()
         machineModel = machineList.split()
         if(len(machineModel) > 1):
+
             for x in range(len(machineModel)-1):
+
                 if(x == 0):
                     self.activeMachine.model = str(machineModel[x+1]) + ' '
+                elif(x == len(machineModel)-2):
+                    self.activeMachine.model += str(machineModel[x+1])
                 else:
                     self.activeMachine.model += str(machineModel[x+1]) + ' '
     
@@ -160,9 +204,9 @@ class main():
         print('')
         loopval = True
         while(loopval == True):
-            print('Stored asset for incrementation: ',self.previousAsset)
+            print('Stored asset to increment: ',self.previousAsset)
             print('')
-            readAsset = input('Please input asset number or press enter to try automatic incrementation: ')
+            readAsset = input('Please input asset number or press enter to try and auto increment: ')
             if(readAsset == ''):
                 loopval = self.incrementAsset(self.previousAsset)
             else:
@@ -171,11 +215,12 @@ class main():
         self.writeStored(str(self.activeMachine.assetNumber))
     
     def printDetails(self):
-        print('            Time:',self.timeGet)
+        #print('            Time:',self.timeGet
         print('    Asset Number:',self.activeMachine.assetNumber)
         print('   Computer Name:',self.activeMachine.computerName)
         print('   Serial Number:',self.activeMachine.serialNumber)
         print('            UUID:',self.activeMachine.UUIDno)
+        print('    UUID BOM Fix:',self.activeMachine.problemDevice)
         print('           Model:',self.activeMachine.model)
         print('    Mac Adresses: ',end='')
         for x in range(len(self.activeMachine.macAddress)):
@@ -189,6 +234,7 @@ class main():
         print('Press enter to write the stored values to disk...')
         input('')
         csvFile = open(self.csv.csvName,'a')
+        csvFile.write(str('U'))
         csvFile.write(str(self.activeMachine.assetNumber))
         csvFile.write(',')
         csvFile.write(str(self.activeMachine.computerName))
@@ -220,6 +266,7 @@ class main():
         self.Header()
         self.genTemplate()
         self.getStored()
+        self.import_problem_devices()
         self.getComputerName()
         self.getModel()
         self.identify_problem_device()
